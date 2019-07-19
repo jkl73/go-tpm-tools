@@ -152,7 +152,14 @@ func (k *Key) Seal(pcrs []int, sensitive []byte) (*SealedBytes, error) {
 		return &SealedBytes{}, fmt.Errorf("could not get pcr session auth: %v", err)
 	}
 
-	return sealHelper(k.rw, k.Handle(), auth, sensitive)
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive)
+	if err != nil {
+		return nil, err
+	}
+	for _, pcr := range pcrs {
+		sb.Pcrs = append(sb.Pcrs, int32(pcr))
+	}
+	return sb, nil
 }
 
 func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte) (*SealedBytes, error) {
@@ -171,7 +178,11 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 // sealing process under the owner hierarchy using the SHA256 versions of the
 // provided PCRs.
 // The Key k is used as the parent key.
-func (k *Key) Unseal(pcrs []int, in *SealedBytes) ([]byte, error) {
+func (k *Key) Unseal(in *SealedBytes) ([]byte, error) {
+	var pcrs []int
+	for _, pcr := range in.Pcrs {
+		pcrs = append(pcrs, int(pcr))
+	}
 	session, err := createPCRSession(k.rw, pcrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)
@@ -197,12 +208,7 @@ func (k *Key) Unseal(pcrs []int, in *SealedBytes) ([]byte, error) {
 // the SHA256 PCRs and uses the owner hierarchy.
 // The Key k is used as the parent key.
 func (k *Key) Reseal(pcrs map[int][]byte, in *SealedBytes) (*SealedBytes, error) {
-	pcrNums := make([]int, 0, len(pcrs))
-	for key := range pcrs {
-		pcrNums = append(pcrNums, key)
-	}
-
-	sensitive, err := k.Unseal(pcrNums, in)
+	sensitive, err := k.Unseal(in)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
@@ -212,7 +218,14 @@ func (k *Key) Reseal(pcrs map[int][]byte, in *SealedBytes) (*SealedBytes, error)
 		return nil, fmt.Errorf("failed to compute pcr session auth: %v", err)
 	}
 
-	return sealHelper(k.rw, k.Handle(), auth, sensitive)
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive)
+	if err != nil {
+		return nil, err
+	}
+	for pcr := range pcrs {
+		sb.Pcrs = append(sb.Pcrs, int32(pcr))
+	}
+	return sb, nil
 }
 
 type tpmsPCRSelection struct {
