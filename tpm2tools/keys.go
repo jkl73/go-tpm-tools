@@ -34,6 +34,11 @@ func StorageRootKeyRSA(rw io.ReadWriter) (*Key, error) {
 	return NewKey(rw, tpm2.HandleOwner, SRKTemplateRSA())
 }
 
+// StorageRootKeySym generates and loads a key from SRKTemplateSym.
+func StorageRootKeySym(rw io.ReadWriter) (*Key, error) {
+	return NewKey(rw, tpm2.HandleOwner, SRKTemplateSym())
+}
+
 // EndorsementKeyFromNvIndex generates and loads an endorsement key using the
 // template stored at the provided nvdata index. This is useful for TPMs which
 // have a preinstalled AIK template.
@@ -91,14 +96,6 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (key 
 	if key.pubArea, err = tpm2.DecodePublic(pubArea); err != nil {
 		return
 	}
-	if key.pubArea.Type != tpm2.AlgRSA {
-		err = fmt.Errorf("keys of type %v are not yet supported", key.pubArea.Type)
-		return
-	}
-	key.pubKey = &rsa.PublicKey{
-		N: key.pubArea.RSAParameters.Modulus,
-		E: int(key.pubArea.RSAParameters.Exponent),
-	}
 	if key.creationData, err = tpm2.DecodeCreationData(creationData); err != nil {
 		return
 	}
@@ -117,6 +114,20 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (key 
 	if lenDigest := len(key.name.Digest.Value); lenDigest != hashFn().Size() {
 		err = fmt.Errorf("got len(digest) of %d, expected %d", lenDigest, hashFn().Size())
 		return
+	}
+
+	switch key.pubArea.Type {
+	case tpm2.AlgRSA:
+		key.pubKey = &rsa.PublicKey{
+			N: key.pubArea.RSAParameters.Modulus,
+			E: int(key.pubArea.RSAParameters.Exponent),
+		}
+	case tpm2.AlgKeyedHash:
+		key.pubKey = nil
+	case tpm2.AlgSymCipher:
+		key.pubKey = nil
+	default:
+		err = fmt.Errorf("keys of type %v are not yet supported", key.pubArea.Type)
 	}
 	return
 }

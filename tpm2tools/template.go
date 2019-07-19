@@ -76,3 +76,16 @@ func SRKTemplateRSA() tpm2.Public {
 
 	return template
 }
+
+// SRKTemplateSym returns a symetric key based (SRK) instead of an RSA-based
+// one. This can still be used for sealing, and makes CreatePrimary much faster.
+func SRKTemplateSym() tpm2.Public {
+	return tpm2.Public{
+		Type:       tpm2.AlgSymCipher,
+		NameAlg:    tpm2.AlgSHA256,
+		Attributes: tpm2.FlagStorageDefault | tpm2.FlagNoDA,
+		SymCipherParameters: &tpm2.SymCipherParams{
+			Symmetric: DefaultEKTemplateRSA().RSAParameters.Symmetric,
+		},
+	}
+}

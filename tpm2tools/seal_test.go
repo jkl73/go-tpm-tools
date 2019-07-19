@@ -51,6 +51,46 @@ func TestSeal(t *testing.T) {
 	}
 }
 
+func TestSealSym(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	key, err := StorageRootKeySym(rwc)
+	if err != nil {
+		t.Fatalf("can't create srk from template: %v", err)
+	}
+	defer key.Close()
+
+	secret := []byte("test")
+	pcrList := []int{7, 23}
+	pcrToExtend := tpmutil.Handle(23)
+
+	sealed, err := key.Seal(pcrList, secret)
+	if err != nil {
+		t.Fatalf("failed to seal: %v", err)
+	}
+
+	unseal, err := key.Unseal(sealed)
+	if err != nil {
+		t.Fatalf("failed to unseal: %v", err)
+	}
+	if !bytes.Equal(secret, unseal) {
+		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+	}
+
+	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
+	err = tpm2.PCRExtend(rwc, pcrToExtend, tpm2.AlgSHA256, extension, "")
+	if err != nil {
+		t.Fatalf("failed to extend pcr: %v", err)
+	}
+
+	// unseal should not succeed.
+	_, err = key.Unseal(sealed)
+	if err == nil {
+		t.Fatalf("unseal should have caused an error: %v", err)
+	}
+}
+
 func TestComputeSessionAuth(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
