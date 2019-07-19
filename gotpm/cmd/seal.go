@@ -25,7 +25,7 @@ TPMs support a "sealing" operation that ... TODO(joerichey): finish`,
 		defer rwc.Close()
 
 		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := tpm2tools.StorageRootKeyRSA(rwc)
+		srk, err := tpm2tools.StorageRootKeySym(rwc)
 		if err != nil {
 			return err
 		}
@@ -67,7 +67,7 @@ The opposite of "gotpm seal" ... TODO(joerichey): finish`,
 		defer rwc.Close()
 
 		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := tpm2tools.StorageRootKeyRSA(rwc)
+		srk, err := tpm2tools.StorageRootKeySym(rwc)
 		if err != nil {
 			return err
 		}
