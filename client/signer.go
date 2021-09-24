@@ -123,7 +123,9 @@ func (k *Key) SignData(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sig, err := tpm2.SignWithSession(k.rw, auth.Session, k.handle, "", digest, ticket, nil)
+
+	sig, err := tpm2.SignWithSession(k.rw, auth.Session, k.handle, "222", digest, ticket, nil)
+
 	if err != nil {
 		return nil, err
 	}

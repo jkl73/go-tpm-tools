@@ -145,7 +145,7 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (k *K
 	}
 
 	handle, pubArea, _, _, _, _, err :=
-		tpm2.CreatePrimaryEx(rw, parent, tpm2.PCRSelection{}, "", "", template)
+		tpm2.CreatePrimaryEx(rw, parent, tpm2.PCRSelection{}, "", "222", template)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,12 @@ func (k *Key) finish() error {
 		} else if len(k.pubArea.AuthPolicy) == 0 {
 			k.session = nullSession{}
 		} else {
-			return fmt.Errorf("unknown auth policy when creating key")
+			sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 8}}
+
+			if k.session, err = newPCRSession(k.rw, sel); err != nil {
+				return err
+			}
+			// return fmt.Errorf("unknown auth policy when creating key")
 		}
 	}
 	return nil
@@ -234,7 +239,9 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
 		}
 	}
 	if len(pcrs.GetPcrs()) > 0 {
-		auth = internal.PCRSessionAuth(pcrs, SessionHashAlg)
+		oldDigest := make([]byte, SessionHashAlg.Size())
+
+		auth = internal.PCRSessionAuth(pcrs, SessionHashAlg, oldDigest)
 	}
 	certifySel := FullPcrSel(CertifyHashAlgTpm)
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifySel)

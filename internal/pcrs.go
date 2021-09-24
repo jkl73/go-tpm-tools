@@ -87,9 +87,9 @@ func SamePCRSelection(p *pb.PCRs, sel tpm2.PCRSelection) bool {
 }
 
 // PCRSessionAuth calculates the authorization value for the given PCRs.
-func PCRSessionAuth(p *pb.PCRs, hashAlg crypto.Hash) []byte {
+func PCRSessionAuth(p *pb.PCRs, hashAlg crypto.Hash, oldDigest []byte) []byte {
 	// Start with all zeros, we only use a single policy command on our session.
-	oldDigest := make([]byte, hashAlg.Size())
+	// oldDigest := make([]byte, hashAlg.Size())
 	ccPolicyPCR, _ := tpmutil.Pack(tpm2.CmdPolicyPCR)
 
 	// Extend the policy digest, see TPM2_PolicyPCR in Part 3 of the spec.

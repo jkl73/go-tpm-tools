@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/google/go-tpm/tpm2"
@@ -37,6 +38,11 @@ type pcrSession struct {
 	sel     tpm2.PCRSelection
 }
 
+// type pwSession struct {
+// 	rw      io.ReadWriter
+// 	session tpmutil.Handle
+// }
+
 func newPCRSession(rw io.ReadWriter, sel tpm2.PCRSelection) (session, error) {
 	if len(sel.PCRs) == 0 {
 		return nullSession{}, nil
@@ -46,9 +52,19 @@ func newPCRSession(rw io.ReadWriter, sel tpm2.PCRSelection) (session, error) {
 }
 
 func (p pcrSession) Auth() (auth tpm2.AuthCommand, err error) {
+
 	if err = tpm2.PolicyPCR(p.rw, p.session, nil, p.sel); err != nil {
 		return
 	}
+	if err = tpm2.PolicyPassword(p.rw, p.session); err != nil {
+		return
+	}
+
+	vv, err := tpm2.PolicyGetDigest(p.rw, p.session)
+
+	fmt.Println("policy digest")
+	fmt.Println(vv)
+
 	return tpm2.AuthCommand{Session: p.session, Attributes: tpm2.AttrContinueSession}, nil
 }
 
@@ -65,6 +81,27 @@ func newEKSession(rw io.ReadWriter) (session, error) {
 	session, err := startAuthSession(rw)
 	return ekSession{rw, session}, err
 }
+
+// func newPasswordSession(rw io.ReadWriter) (session, error) {
+// 	session, err := startAuthSession(rw)
+
+// 	return pwSession{rw, session}, err
+// }
+
+// func (p pwSession) Auth() (auth tpm2.AuthCommand, err error) {
+// 	if err = tpm2.PolicyPassword(p.rw, p.session); err != nil {
+// 		return
+// 	}
+// 	newDigest := make([]byte, 32)
+// 	newDigest[0] = 2
+// 	fmt.Println("auth command")
+// 	fmt.Println(newDigest)
+// 	return tpm2.AuthCommand{Session: p.session, Attributes: tpm2.AttrContinueSession, Auth: newDigest}, nil
+// }
+
+// func (p pwSession) Close() error {
+// 	return tpm2.FlushContext(p.rw, p.session)
+// }
 
 func (e ekSession) Auth() (auth tpm2.AuthCommand, err error) {
 	nullAuth := tpm2.AuthCommand{Session: tpm2.HandlePasswordSession, Attributes: tpm2.AttrContinueSession}

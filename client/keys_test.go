@@ -1,6 +1,7 @@
 package client_test
 
 import (
+	"fmt"
 	"io"
 	"reflect"
 	"testing"
@@ -28,6 +29,102 @@ func TestNameMatchesPublicArea(t *testing.T) {
 	if !matches {
 		t.Fatal("Returned name and computed name do not match")
 	}
+}
+
+func TestPCRandPassword(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	// oldDigest := make([]byte, hashAlg.Size())
+	// ccPolicyPCR, _ := tpmutil.Pack(tpm2.CmdPolicyPCR)
+
+	// hash := hashAlg.New()
+	// hash.Write(oldDigest)
+	// hash.Write(ccPolicyPCR)
+	// hash.Write(encodePCRSelection(PCRSelection(p)))
+	// hash.Write(PCRDigest(p, hashAlg))
+	// newDigest := hash.Sum(nil)
+
+	session, nonce, err := tpm2.StartAuthSession(
+		rwc,
+		/*tpmKey=*/ tpm2.HandleNull,
+		/*bindKey=*/ tpm2.HandleNull,
+		/*nonceCaller=*/ make([]byte, client.SessionHashAlg.Size()),
+		/*encryptedSalt=*/ nil,
+		/*sessionType=*/ tpm2.SessionPolicy,
+		/*symmetric=*/ tpm2.AlgNull,
+		/*authHash=*/ client.SessionHashAlgTpm)
+
+	fmt.Println(nonce)
+
+	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 8}}
+	if err = tpm2.PolicyPCR(rwc, session, nil, sel); err != nil {
+		t.Fatal()
+	}
+	if err = tpm2.PolicyPassword(rwc, session); err != nil {
+		t.Fatal()
+	}
+
+	ss, err := tpm2.PolicyGetDigest(rwc, session)
+	if err != nil {
+		t.Fatal()
+	}
+
+	fmt.Println(ss)
+
+	tpm2.FlushContext(rwc, session)
+
+	// var ffff tpmutil.Command = 0x0000016C
+
+	// pcrs, err := client.ReadPCRs(rwc, sel)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// }
+	// auth := internal.PCRSessionAuth(pcrs, client.SessionHashAlg, oldDigest)
+
+	// hash := hashAlg.New()
+	// hash.Write(auth)
+	// ccPolicyPassword, _ := tpmutil.Pack(ffff)
+	// fmt.Println(ccPolicyPassword)
+	// hash.Write(ccPolicyPassword)
+	// newAuth := hash.Sum(nil)
+
+	// hash := client.SessionHashAlg.New()
+	// hash.Write(auth)
+
+	// ccPolicyPassword, _ := tpmutil.Pack(tpm2.CmdPolicyPassword)
+
+	// hash.Write(ccPolicyPassword)
+	// newAuth := hash.Sum(nil)
+
+	template := tpm2.Public{
+		Type:       tpm2.AlgRSA,
+		NameAlg:    tpm2.AlgSHA256,
+		Attributes: tpm2.FlagSignerDefault,
+		AuthPolicy: ss,
+		RSAParameters: &tpm2.RSAParams{
+			Sign: &tpm2.SigScheme{
+				Alg:  tpm2.AlgRSASSA,
+				Hash: tpm2.AlgSHA256,
+			},
+			KeyBits: 2048,
+		},
+	}
+	key, err := client.NewKey(rwc, tpm2.HandleEndorsement, template)
+	if err != nil {
+		t.Errorf("Hierarchy %+v: %s", tpm2.HandleEndorsement, err)
+	} else {
+		defer key.Close()
+	}
+
+	c, err := key.SignData([]byte("ff"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	fmt.Println("signed")
+	fmt.Println(c)
+	t.Fatalf("yesppg")
 }
 
 func TestCreateSigningKeysInHierarchies(t *testing.T) {

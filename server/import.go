@@ -97,7 +97,9 @@ func setPublicAuth(public *tpm2.Public, pcrs *pb.PCRs) {
 		public.AuthPolicy = nil
 		public.Attributes |= tpm2.FlagUserWithAuth
 	} else {
-		public.AuthPolicy = internal.PCRSessionAuth(pcrs, client.SessionHashAlg)
+		oldDigest := make([]byte, client.SessionHashAlg.Size())
+
+		public.AuthPolicy = internal.PCRSessionAuth(pcrs, client.SessionHashAlg, oldDigest)
 		public.Attributes |= tpm2.FlagAdminWithPolicy
 	}
 }
