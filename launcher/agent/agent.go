@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -39,6 +40,23 @@ var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
+type rotType int
+
+// ordering matters, better root of trust must have a higher index
+const (
+	tpmpcr rotType = iota + 1 // EnumIndex = 1
+	tdxrmtr
+)
+
+func (r rotType) String() string {
+	return [...]string{"TpmPCr", "TDXRTMR"}[r-1]
+}
+
+// EnumIndex - Creating common behavior - give the type a EnumIndex function
+func (r rotType) EnumIndex() int {
+	return int(r)
+}
+
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
 // to Verify an attestation message. It is an interface instead of a concrete
 // struct to make testing easier.
@@ -54,6 +72,8 @@ type attestRoot interface {
 	Extend(cel.Content, *cel.CEL) error
 	// Attest fetches a technology-specific quote from the root of trust.
 	Attest(nonce []byte) (any, error)
+	// GetType returns the Root of Trust type.
+	GetType() rotType
 }
 
 // AttestAgentOpts contains user generated options when calling the
@@ -65,7 +85,7 @@ type AttestAgentOpts struct {
 }
 
 type agent struct {
-	ar               attestRoot
+	ar               []attestRoot
 	cosCel           cel.CEL
 	fetchedAK        *client.Key
 	client           verifier.Client
@@ -102,25 +122,31 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 
 	// check if is a TDX machine
 	qp, err := tg.GetQuoteProvider()
-	if err != nil || qp.IsSupported() != nil {
-		logger.Println("Using TPM PCRs for measurement.")
+	if err != nil {
+		return nil, err
+	}
+
+	// Add TPM
+	logger.Info("Adding TPM PCRs for measurement.")
+	attestAgent.ar = append(attestAgent.ar, &tpmAttestRoot{
+		fetchedAK: ak,
+		tpm:       tpm,
+	})
+
+	// Try to add RTMR
+	if qp.IsSupported() == nil { // if is supported
 		// by default using TPM
-		attestAgent.ar = &tpmAttestRoot{
-			fetchedAK: ak,
-			tpm:       tpm,
-		}
-	} else {
-		logger.Println("Using TDX RTMRs for measurement.")
+		logger.Info("Adding TDX RTMRs for measurement.")
 		// try to create tsm client for tdx rtmr
 		tsm, err := linuxtsm.MakeClient()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create TSM for TDX: %v", err)
 		}
 
-		attestAgent.ar = &tdxAttestRoot{
+		attestAgent.ar = append(attestAgent.ar, &tdxAttestRoot{
 			qp:        qp,
 			tsmClient: tsm,
-		}
+		})
 	}
 
 	return attestAgent, nil
@@ -134,13 +160,30 @@ func (a *agent) Close() error {
 
 // MeasureEvent takes in a cel.Content and appends it to the CEL eventlog
 // under the attestation agent.
+// MeasureEvent measures to all Attest Roots.
 func (a *agent) MeasureEvent(event cel.Content) error {
-	return a.ar.Extend(event, &a.cosCel)
+	for _, attestRoot := range a.ar {
+		if err := attestRoot.Extend(event, &a.cosCel); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *agent) getBestAttestRoot() attestRoot {
+	if len(a.ar) == 0 {
+		return nil
+	}
+	sort.Slice(a.ar, func(i, j int) bool {
+		return a.ar[i].GetType() > a.ar[j].GetType()
+	})
+	return a.ar[0]
 }
 
 // Attest fetches the nonce and connection ID from the Attestation Service,
 // creates an attestation message, and returns the resultant
 // principalIDTokens and Metadata Server-generated ID tokens for the instance.
+// Attest only attests to the "best" Attest Root.
 func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
 	challenge, err := a.client.CreateChallenge(ctx)
 	if err != nil {
@@ -162,7 +205,13 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		},
 	}
 
-	attResult, err := a.ar.Attest(challenge.Nonce)
+	// attest fetch the "best" attest root
+	aaarrr := a.getBestAttestRoot()
+	if aaarrr == nil {
+		return nil, fmt.Errorf("no valid Root of Trust found")
+	}
+
+	attResult, err := aaarrr.Attest(challenge.Nonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
@@ -174,12 +223,12 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
-		a.logger.Println("attestation through TPM quote")
+		a.logger.Info("attestation through TPM quote")
 
 		v.CanonicalEventLog = cosCel.Bytes()
 		req.Attestation = v
 	case *verifier.TDCCELAttestation:
-		a.logger.Println("attestation through TDX quote")
+		a.logger.Info("attestation through TDX quote")
 
 		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
 		if err != nil {
@@ -216,6 +265,10 @@ type tpmAttestRoot struct {
 	tpm       io.ReadWriteCloser
 }
 
+func (t *tpmAttestRoot) GetType() rotType {
+	return tpmpcr
+}
+
 func (t *tpmAttestRoot) Extend(c cel.Content, l *cel.CEL) error {
 	return l.AppendEventPCR(t.tpm, cel.CosEventPCR, defaultCELHashAlgo, c)
 }
@@ -234,6 +287,10 @@ type tdxAttestRoot struct {
 	tdxMu     sync.Mutex
 	qp        *tg.LinuxConfigFsQuoteProvider
 	tsmClient configfsi.Client
+}
+
+func (t *tdxAttestRoot) GetType() rotType {
+	return tdxrmtr
 }
 
 func (t *tdxAttestRoot) Extend(c cel.Content, l *cel.CEL) error {

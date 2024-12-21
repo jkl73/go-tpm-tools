@@ -185,6 +185,20 @@ func placeholderPrincipalFetcher(_ string) ([][]byte, error) {
 	return [][]byte{}, nil
 }
 
+func TestGetBestAttestRoot(t *testing.T) {
+	attestAgent := &agent{}
+
+	attestAgent.ar = append(attestAgent.ar, &tpmAttestRoot{})
+	attestAgent.ar = append(attestAgent.ar, &tdxAttestRoot{})
+
+	got := attestAgent.getBestAttestRoot()
+	want := &tdxAttestRoot{}
+
+	if got.GetType() != tdxrmtr {
+		t.Errorf("should return the better root of trust, want %s, got %s", want.GetType().String(), got.GetType().String())
+	}
+}
+
 func TestFetchContainerImageSignatures(t *testing.T) {
 	ctx := context.Background()
 
