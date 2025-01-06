@@ -622,7 +622,7 @@ func TestMeasureCELEvents(t *testing.T) {
 
 			r := ContainerRunner{
 				attestAgent: fakeAgent,
-				container:   fakeContainer,
+				containers:  []containerd.Container{fakeContainer},
 				launchSpec:  tc.launchSpec,
 				logger:      logging.SimpleLogger(),
 			}

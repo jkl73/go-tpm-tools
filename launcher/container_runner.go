@@ -13,6 +13,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -43,7 +44,7 @@ import (
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container     containerd.Container
+	containers    []containerd.Container
 	launchSpec    spec.LaunchSpec
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
@@ -153,6 +154,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}}
 
 	specOpts := []oci.SpecOpts{
+		// oci.WithCapabilities()
 		oci.WithImageConfigArgs(image, launchSpec.Cmd),
 		oci.WithEnv(envs),
 		oci.WithMounts(mounts),
@@ -182,6 +184,92 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, &RetryableError{fmt.Errorf("failed to create a container: [%w]", err)}
 	}
 
+	i2 := getimage(ctx, cdClient, "us-docker.pkg.dev/jiankun-vm-test/jklutestimages/testmulti:latest", token)
+	contianer2, err := cdClient.NewContainer(
+		ctx,
+		"c2",
+		containerd.WithImage(i2),
+		containerd.WithNewSnapshot("c2snapshot", image),
+		containerd.WithNewSpec(oci.WithMounts(mounts), oci.WithImageConfigArgs(i2, []string{}), oci.WithEnv([]string{fmt.Sprintf("CONTAINERID=%s", "2")})),
+	)
+	if err != nil {
+		return nil, &RetryableError{fmt.Errorf("failed to create a container: [%w]", err)}
+	}
+
+	contianer3, err := cdClient.NewContainer(
+		ctx,
+		"c3",
+		containerd.WithImage(getimage(ctx, cdClient, "us-docker.pkg.dev/jiankun-vm-test/jklutestimages/testmulti:latest", token)),
+		containerd.WithNewSnapshot("c3snapshot", image),
+		containerd.WithNewSpec(oci.WithMounts(mounts), oci.WithImageConfigArgs(i2, []string{}), oci.WithEnv([]string{fmt.Sprintf("CONTAINERID=%s", "3")})),
+	)
+	if err != nil {
+		return nil, &RetryableError{fmt.Errorf("failed to create a container: [%w]", err)}
+	}
+
+	contianer4, err := cdClient.NewContainer(
+		ctx,
+		"c4",
+		containerd.WithImage(getimage(ctx, cdClient, "us-docker.pkg.dev/jiankun-vm-test/jklutestimages/testmulti:latest", token)),
+		containerd.WithNewSnapshot("c4snapshot", image),
+		containerd.WithNewSpec(oci.WithMounts(mounts), oci.WithImageConfigArgs(i2, []string{}), oci.WithEnv([]string{fmt.Sprintf("CONTAINERID=%s", "4")})),
+	)
+	if err != nil {
+		return nil, &RetryableError{fmt.Errorf("failed to create a container: [%w]", err)}
+	}
+
+	contianer5, err := cdClient.NewContainer(
+		ctx,
+		"c5",
+		containerd.WithImage(getimage(ctx, cdClient, "us-docker.pkg.dev/jiankun-vm-test/jklutestimages/testmulti:latest", token)),
+		containerd.WithNewSnapshot("c5snapshot", image),
+		containerd.WithNewSpec(oci.WithMounts(mounts), oci.WithImageConfigArgs(i2, []string{}), oci.WithEnv([]string{fmt.Sprintf("CONTAINERID=%s", "5")})),
+	)
+	if err != nil {
+		return nil, &RetryableError{fmt.Errorf("failed to create a container: [%w]", err)}
+	}
+
+	// contianer6, err := cdClient.NewContainer(
+	// 	ctx,
+	// 	"c6",
+	// 	containerd.WithImage(getimage(ctx, cdClient, "us-docker.pkg.dev/jiankun-vm-test/jklutestimages/testmulti:latest", token)),
+	// 	containerd.WithNewSnapshot("c2snapshot", image),
+	// 	containerd.WithNewSpec(oci.WithEnv([]string{fmt.Sprintf("CONTAINERID=%s", "6")})),
+	// )
+
+	// contianer7, err := cdClient.NewContainer(
+	// 	ctx,
+	// 	"c7",
+	// 	containerd.WithImage(getimage(ctx, cdClient, "us-docker.pkg.dev/jiankun-vm-test/jklutestimages/testmulti:latest", token)),
+	// 	containerd.WithNewSnapshot("c2snapshot", image),
+	// 	containerd.WithNewSpec(oci.WithEnv([]string{fmt.Sprintf("CONTAINERID=%s", "7")})),
+	// )
+
+	// contianer8, err := cdClient.NewContainer(
+	// 	ctx,
+	// 	"c8",
+	// 	containerd.WithImage(getimage(ctx, cdClient, "us-docker.pkg.dev/jiankun-vm-test/jklutestimages/testmulti:latest", token)),
+	// 	containerd.WithNewSnapshot("c2snapshot", image),
+	// 	containerd.WithNewSpec(oci.WithEnv([]string{fmt.Sprintf("CONTAINERID=%s", "8")})),
+	// )
+
+	// contianer9, err := cdClient.NewContainer(
+	// 	ctx,
+	// 	"c9",
+	// 	containerd.WithImage(getimage(ctx, cdClient, "us-docker.pkg.dev/jiankun-vm-test/jklutestimages/testmulti:latest", token)),
+	// 	containerd.WithNewSnapshot("c2snapshot", image),
+	// 	containerd.WithNewSpec(oci.WithEnv([]string{fmt.Sprintf("CONTAINERID=%s", "9")})),
+	// )
+
+	// contianer10, err := cdClient.NewContainer(
+	// 	ctx,
+	// 	"c10",
+	// 	containerd.WithImage(getimage(ctx, cdClient, "us-docker.pkg.dev/jiankun-vm-test/jklutestimages/testmulti:latest", token)),
+	// 	containerd.WithNewSnapshot("c2snapshot", image),
+	// 	containerd.WithNewSpec(oci.WithEnv([]string{fmt.Sprintf("CONTAINERID=%s", "10")})),
+	// )
+
+	//
 	containerSpec, err := container.Spec(ctx)
 	if err != nil {
 		return nil, &RetryableError{err}
@@ -228,8 +316,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, err
 	}
+
+	var containers []containerd.Container
+
+	containers = append(containers, []containerd.Container{container, contianer2, contianer3, contianer4, contianer5}...)
+
+	fmt.Println(len(containers), " totoal co")
 	return &ContainerRunner{
-		container,
+		containers,
 		launchSpec,
 		attestAgent,
 		logger,
@@ -323,7 +417,7 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 // measureContainerClaims will measure various container claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
-	image, err := r.container.Image(ctx)
+	image, err := r.containers[0].Image(ctx)
 	if err != nil {
 		return err
 	}
@@ -342,7 +436,7 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 		}
 	}
 
-	containerSpec, err := r.container.Spec(ctx)
+	containerSpec, err := r.containers[0].Spec(ctx)
 	if err != nil {
 		return err
 	}
@@ -548,9 +642,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if err := r.measureCELEvents(ctx); err != nil {
-		return fmt.Errorf("failed to measure CEL events: %v", err)
-	}
+	// if err := r.measureCELEvents(ctx); err != nil {
+	// 	return fmt.Errorf("failed to measure CEL events: %v", err)
+	// }
 
 	if err := r.fetchAndWriteToken(ctx); err != nil {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
@@ -589,11 +683,34 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
+	var wg sync.WaitGroup
+	wg.Add(4)
+
+	task, err := r.containers[0].NewTask(ctx, cio.NewCreator(streamOpt))
 	if err != nil {
 		return &RetryableError{err}
 	}
 	defer task.Delete(ctx)
+
+	// Multiple containers
+	for i := 1; i < 5; i++ {
+		fmt.Println(i)
+
+		// other wise race condition
+		x := i
+
+		go func() {
+			task, err := r.containers[x].NewTask(ctx, cio.NewCreator(streamOpt))
+			if err != nil {
+				return
+			}
+			task.Start(ctx)
+		}()
+
+		defer wg.Done()
+		defer task.Delete(ctx)
+	}
+	// new containers and new tasks
 
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
@@ -613,6 +730,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	status := <-exitStatusC
 	workloadDuration := time.Since(start)
+
+	wg.Wait()
 
 	code, _, err := status.Result()
 	if err != nil {
@@ -668,6 +787,32 @@ func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec
 		return nil, fmt.Errorf("cannot pull the image (no token, only works for a public image): %w", err)
 	}
 	return image, nil
+}
+
+func getimage(ctx context.Context, cdClient *containerd.Client, imageref string, token oauth2.Token) containerd.Image {
+	if token.Valid() {
+		remoteOpt := containerd.WithResolver(registryauth.Resolver(token.AccessToken))
+		image, err := pullImageWithRetries(
+			func() (containerd.Image, error) {
+				return cdClient.Pull(ctx, imageref, containerd.WithPullUnpack, remoteOpt)
+			},
+			pullImageBackoffPolicy,
+		)
+		if err != nil {
+			panic(err)
+		}
+		return image
+	}
+	image, err := pullImageWithRetries(
+		func() (containerd.Image, error) {
+			return cdClient.Pull(ctx, imageref, containerd.WithPullUnpack)
+		},
+		pullImageBackoffPolicy,
+	)
+	if err != nil {
+		panic(err)
+	}
+	return image
 }
 
 // openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
@@ -733,7 +878,7 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
-	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
+	r.containers[0].Delete(ctx, containerd.WithSnapshotCleanup)
 }
 
 // withRlimits sets the rlimit (like the max file descriptor) for the container process

@@ -104,11 +104,16 @@ type EnvVar struct {
 // launch a container.
 type LaunchSpec struct {
 	// MDS-based values.
-	ImageRef                   string
-	SignedImageRepos           []string
-	RestartPolicy              RestartPolicy
-	Cmd                        []string
-	Envs                       []EnvVar
+	ImageRef         string
+	SignedImageRepos []string
+	RestartPolicy    RestartPolicy
+	Cmd              []string
+	Envs             []EnvVar
+	Mounts           []launchermount.Mount
+	// DevShmSize is specified in kiB.
+	DevShmSize int64
+	// each container based
+
 	AttestationServiceAddr     string
 	ImpersonateServiceAccounts []string
 	ProjectID                  string
@@ -116,10 +121,7 @@ type LaunchSpec struct {
 	Hardened                   bool
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
-	Mounts                     []launchermount.Mount
-	// DevShmSize is specified in kiB.
-	DevShmSize  int64
-	Experiments experiments.Experiments
+	Experiments                experiments.Experiments
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
