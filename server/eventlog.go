@@ -475,11 +475,22 @@ func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
 			if suffixAt == -1 {
 				return nil, fmt.Errorf("invalid prefix seen for PCR%d event: %s", index, rawData)
 			}
-			hasher.Write(rawData[suffixAt : len(rawData)-1])
-			if !bytes.Equal(event.Digest, hasher.Sum(nil)) {
-				// Older GRUBs measure "grub_cmd " with the null terminator.
-				// However, "grub_kernel_cmdline " measurements also ignore the null terminator.
-				hasher.Reset()
+
+			// if data ended with a null terminator, will calculate the digest for both w/ and w/o the null terminator
+			if len(rawData) > suffixAt && rawData[len(rawData)-1] == '\x00' {
+				// try digest w/o the terminator
+				hasher.Write(rawData[suffixAt : len(rawData)-1])
+
+				if !bytes.Equal(event.Digest, hasher.Sum(nil)) {
+					// second chance, try digest w/ the terminator
+					hasher.Reset()
+					hasher.Write(rawData[suffixAt:])
+
+					if !bytes.Equal(event.Digest, hasher.Sum(nil)) {
+						return nil, fmt.Errorf("invalid digest seen for GRUB event log in event (w/ or w/o the null terminator) %d: %s", idx, hex.EncodeToString(event.Digest))
+					}
+				}
+			} else {
 				hasher.Write(rawData[suffixAt:])
 				if !bytes.Equal(event.Digest, hasher.Sum(nil)) {
 					return nil, fmt.Errorf("invalid digest seen for GRUB event log in event %d: %s", idx, hex.EncodeToString(event.Digest))
