@@ -139,6 +139,36 @@ func generateDigestMap(hashAlgos []crypto.Hash, event Content) (map[crypto.Hash]
 	return digestsMap, nil
 }
 
+// AppendEventRTMRSysfs appends a new RTMR record to the CEL. rtmrIndex indicates the RTMR to extend.
+// The index showing up in the record will be rtmrIndex + 1. Using sysfs interface.
+func (c *CEL) AppendEventRTMRSysfs(rtmrIndex int, event Content) error {
+	digestsMap, err := generateDigestMap([]crypto.Hash{crypto.SHA384}, event)
+	if err != nil {
+		return err
+	}
+
+	eventTlv, err := event.GetTLV()
+	if err != nil {
+		return err
+	}
+
+	err = rtmr.ExtendDigestSysfs(rtmrIndex, digestsMap[crypto.SHA384])
+	if err != nil {
+		return err
+	}
+
+	celrRTMR := Record{
+		RecNum:    uint64(len(c.Records)),
+		Index:     uint8(rtmrIndex) + 1, // CCMR conversion from RTMR
+		Digests:   digestsMap,
+		Content:   eventTlv,
+		IndexType: CCMRTypeValue,
+	}
+
+	c.Records = append(c.Records, celrRTMR)
+	return nil
+}
+
 // AppendEventRTMR appends a new RTMR record to the CEL. rtmrIndex indicates the RTMR to extend.
 // The index showing up in the record will be rtmrIndex + 1.
 func (c *CEL) AppendEventRTMR(client configfsi.Client, rtmrIndex int, event Content) error {
